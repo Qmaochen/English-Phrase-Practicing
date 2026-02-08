@@ -167,7 +167,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     1. **Usage Check (CRITICAL)**: 
        - Did the user use the Target Phrase "{targets_str}"? 
        - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
-       - Morphological changes (e.g., tense, plural, possessive) are allowed if the core phrase is recognizable.
+       - Morphological changes (e.g., tense, plural, possessive like my, your, ...) are allowed if the core phrase is recognizable.
        - If the target phrase is present but with little change that still makes it recognizable, it can be considered correct.
        - The order of the target phrase can be flexible. 
        
