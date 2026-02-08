@@ -151,6 +151,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
        - Did the user use the Target Phrase "{targets_str}"? 
        - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
        - Morphological changes (e.g., tense, plural) are allowed if the core phrase is recognizable.
+       - If the target phrase is present but with litter changes that still make it recognizable, it can be considered correct.
        
     2. **Grammar & Flow**:
        - If Target Phrase is present but grammar is bad -> Score 60-75.
@@ -163,6 +164,8 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
        
     4. **Better Sentence (English)**:
        - Provide a natural, native-level sentence using the Target Phrase that fits the Context.
+       - The sentence should be consice and directly related to the scenario.
+       - The sentence MUST be semantically correct.
        
     Output Format (JSON):
     {{
