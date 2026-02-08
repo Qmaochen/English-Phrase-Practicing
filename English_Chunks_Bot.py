@@ -1,0 +1,287 @@
+import streamlit as st
+import pandas as pd
+from datetime import datetime, timedelta
+from groq import Groq
+from streamlit_mic_recorder import mic_recorder
+from io import BytesIO
+import json
+import random
+import asyncio
+import edge_tts
+import base64
+from streamlit_gsheets import GSheetsConnection
+
+# --- 1. 初始化與設定 ---
+st.set_page_config(page_title="English Chunk Master (Online)", layout="centered", page_icon="🦁")
+
+# Session State 初始化
+if 'current_mode' not in st.session_state: st.session_state.current_mode = None
+if 'current_chunks' not in st.session_state: st.session_state.current_chunks = []
+if 'current_topic' not in st.session_state: st.session_state.current_topic = ""
+if 'current_indices' not in st.session_state: st.session_state.current_indices = []
+if 'current_level' not in st.session_state: st.session_state.current_level = "B1"
+if 'generated_prompt' not in st.session_state: st.session_state.generated_prompt = ""
+if 'feedback' not in st.session_state: st.session_state.feedback = None
+if 'processed' not in st.session_state: st.session_state.processed = False
+if 'api_key_input' not in st.session_state: st.session_state.api_key_input = ""
+if 'df' not in st.session_state: st.session_state.df = None
+
+# 建立 Google Sheets 連線
+conn = st.connection("gsheets", type=GSheetsConnection)
+
+# --- 2. 資料處理 (針對 2026/2/7 格式優化) ---
+
+def load_data():
+    try:
+        # ttl=0 確保不快取
+        df = conn.read(worksheet="Sheet1", ttl=0)
+        
+        # 清理欄位
+        df.columns = df.columns.str.strip()
+        required = ['Chunks', 'Topic', 'Date', 'Times', 'Next']
+        
+        # 今天的格式字串 (用於填補空值)
+        now = datetime.now()
+        today_str = f"{now.year}/{now.month}/{now.day}"
+        
+        # 補齊欄位
+        for col in required:
+            if col not in df.columns:
+                if col == 'Times': df[col] = 0
+                elif col in ['Date', 'Next']: df[col] = today_str
+                else: df[col] = ""
+
+        # 轉型 - Times
+        df['Times'] = pd.to_numeric(df['Times'], errors='coerce').fillna(0).astype(int)
+
+        # 轉型 - 日期處理
+        # 這裡我們要能夠讀懂 "2026/2/7" 也讀懂 "2026-02-07" (相容性)
+        for col in ['Next', 'Date']:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors='coerce')
+                
+                # 如果有讀不到的日期 (NaT)，填入預設值
+                fill_val = (pd.Timestamp.now() - pd.Timedelta(days=1)) if col == 'Next' else pd.Timestamp.now()
+                df[col] = df[col].fillna(fill_val).dt.normalize()
+        
+        return df
+
+    except Exception as e:
+        st.error(f"讀取 Google Sheet 失敗: {e}")
+        return pd.DataFrame(columns=['Chunks', 'Topic', 'Date', 'Times', 'Next'])
+
+def save_data(df):
+    try:
+        save_df = df.copy()
+        
+        # 定義格式化函數：變成 2026/2/7 (不補0)
+        def custom_date_fmt(dt):
+            if pd.isnull(dt): return ""
+            return f"{dt.year}/{dt.month}/{dt.day}"
+
+        # 轉換日期欄位為指定字串格式
+        if 'Next' in save_df.columns:
+             save_df['Next'] = save_df['Next'].apply(custom_date_fmt)
+        
+        if 'Date' in save_df.columns:
+             save_df['Date'] = save_df['Date'].apply(custom_date_fmt)
+        
+        # 寫回 Google Sheet
+        conn.update(worksheet="Sheet1", data=save_df)
+        st.cache_data.clear()
+        st.toast("☁️ 進度已同步 (格式: YYYY/M/D)", icon="✅")
+        
+    except Exception as e:
+        st.error(f"寫入 Google Sheet 失敗: {e}")
+
+# --- 3. AI 與 語音邏輯 ---
+
+def get_cefr_level(times):
+    if times < 3: return "B1"
+    elif times < 6: return "B2"
+    else: return "C1"
+
+def get_groq_client():
+    if not st.session_state.api_key_input: return None
+    return Groq(api_key=st.session_state.api_key_input)
+
+def transcribe_audio(audio_bytes):
+    client = get_groq_client()
+    if not client: return ""
+    try:
+        audio_file = BytesIO(audio_bytes)
+        audio_file.name = "audio.webm"
+        return client.audio.transcriptions.create(
+            file=audio_file, model="whisper-large-v3", language="en", response_format="text"
+        )
+    except Exception as e: return f"Error: {str(e)}"
+
+async def generate_tts(text):
+    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="-10%")
+    audio_data = b""
+    async for chunk in communicate.stream():
+        if chunk["type"] == "audio":
+            audio_data += chunk["data"]
+    return audio_data
+
+def play_audio_bytes(audio_bytes):
+    b64 = base64.b64encode(audio_bytes).decode()
+    md = f"""<audio controls autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
+    st.markdown(md, unsafe_allow_html=True)
+
+def generate_challenge(phrase, level):
+    client = get_groq_client()
+    if not client: return "No API Key"
+    prompt = f"Target Phrase: '{phrase}'. Level: {level}. Create a Chinese sentence (Traditional TW) to force user to use this phrase. Output ONLY Chinese."
+    completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
+    return completion.choices[0].message.content
+
+def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
+    client = get_groq_client()
+    if not client: return {}
+    system_prompt = f"Target: {target_phrases}. Mode: {mode}. Context: {context_prompt}. User: {user_text}. Grade (0-100), feedback (Traditional Chinese), better_sentence (English). JSON format."
+    try:
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "system", "content": "JSON generator"}, {"role": "user", "content": system_prompt}],
+            response_format={"type": "json_object"}
+        )
+        return json.loads(completion.choices[0].message.content)
+    except: return {"score": 0, "feedback": "Error", "better_sentence": ""}
+
+# --- 4. 主介面 ---
+
+with st.sidebar:
+    st.title("⚙️ 設定")
+    groq_api_key = st.text_input("Groq API Key", type="password", value=st.session_state.api_key_input)
+    st.session_state.api_key_input = groq_api_key
+    
+    st.markdown("---")
+    if st.button("🔄 重新載入雲端資料"):
+        st.session_state.df = load_data()
+        st.session_state.processed = False
+        st.session_state.feedback = None
+        st.rerun()
+
+# 首次載入
+if st.session_state.df is None:
+    with st.spinner("正在連線至 Google Drive..."):
+        st.session_state.df = load_data()
+
+st.title("🦁 English Chunk Master (Online)")
+
+if not groq_api_key:
+    st.info("💡 請先在左側輸入 Groq API Key")
+elif st.session_state.df is None or st.session_state.df.empty:
+    st.warning("⚠️ 無法讀取資料，請檢查 Google Sheets 連結或權限設定。")
+else:
+    # 取得今日待複習
+    today = pd.Timestamp.now().normalize()
+    due_items = st.session_state.df[st.session_state.df['Next'] <= today]
+
+    if len(due_items) == 0:
+        st.success("🎉 今日進度已完成！")
+        if st.button("🔥 強制複習全部 (Demo)"):
+            st.session_state.df['Next'] = today
+            st.rerun()
+    else:
+        st.markdown(f"##### 📅 今日待複習: **{len(due_items)}** 筆")
+        st.progress(min(1.0, len(due_items)/max(1, len(st.session_state.df))))
+
+        # 1. 抽取題目
+        if not st.session_state.processed and not st.session_state.current_chunks:
+            # 隨機選題
+            random_idx = random.choice(due_items.index)
+            row = st.session_state.df.loc[random_idx]
+            
+            topic = row['Topic']
+            phrase = row['Chunks']
+            times = row['Times']
+            
+            # 判斷故事模式
+            topic_siblings = due_items[due_items['Topic'] == topic]
+            
+            if len(topic_siblings) >= 2 and random.random() > 0.5:
+                st.session_state.current_mode = "Story"
+                sample_n = min(3, len(topic_siblings))
+                selected = topic_siblings.sample(sample_n)
+                st.session_state.current_chunks = selected['Chunks'].tolist()
+                st.session_state.current_indices = selected.index.tolist()
+                st.session_state.generated_prompt = "Story Mode"
+            else:
+                st.session_state.current_mode = "Single"
+                st.session_state.current_chunks = [phrase]
+                st.session_state.current_indices = [random_idx]
+                st.session_state.current_level = get_cefr_level(times)
+                with st.spinner("AI 出題中..."):
+                    st.session_state.generated_prompt = generate_challenge(phrase, st.session_state.current_level)
+
+        # 2. 顯示題目
+        mode = st.session_state.current_mode
+        st.markdown(f"### Topic: {st.session_state.df.loc[st.session_state.current_indices[0], 'Topic']}")
+        
+        if mode == "Single":
+            st.caption(f"Level: {st.session_state.current_level}")
+            st.markdown(f"""
+            <div style="background-color:#f3f4f6; padding:20px; border-radius:10px; margin-bottom:15px;">
+                <div style="font-size:1.5em; font-weight:bold;">{st.session_state.generated_prompt}</div>
+                <div style="color:#2563eb; margin-top:10px;">Target: <b>{st.session_state.current_chunks[0]}</b></div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("請說一個故事，包含以下片語：")
+            cols = st.columns(len(st.session_state.current_chunks))
+            for i, c in enumerate(st.session_state.current_chunks):
+                cols[i].markdown(f"**{i+1}. {c}**")
+
+        # 3. 錄音
+        audio_data = mic_recorder(start_prompt="🎙️ 開始回答", stop_prompt="⏹️ 完成", key="recorder")
+
+        if audio_data and not st.session_state.processed:
+            user_text = transcribe_audio(audio_data['bytes'])
+            st.write(f"👂 You said: {user_text}")
+            
+            with st.spinner("AI 評分中..."):
+                feedback = evaluate_submission(user_text, st.session_state.current_chunks, mode, st.session_state.generated_prompt)
+                st.session_state.feedback = feedback
+                st.session_state.processed = True
+                st.rerun()
+
+        # 4. 結果與更新
+        if st.session_state.processed and st.session_state.feedback:
+            res = st.session_state.feedback
+            score = res.get('score', 0)
+            color = "green" if score >= 80 else "red"
+            st.markdown(f"## Score: :{color}[{score}]")
+            st.markdown(f"**💡 AI 建議:** {res.get('feedback')}")
+            st.markdown(f"**🌟 最佳範例:** {res.get('better_sentence')}")
+            
+            if res.get('better_sentence'):
+                audio_bytes = asyncio.run(generate_tts(res['better_sentence']))
+                play_audio_bytes(audio_bytes)
+
+            if st.button("➡️ 下一題 (Update & Save)"):
+                is_correct = score >= 80
+                # 這裡不轉換字串，只改 datetime 物件，等 save_data 時再一次轉
+                today_obj = pd.Timestamp.now().normalize()
+                
+                for idx in st.session_state.current_indices:
+                    current_times = int(st.session_state.df.loc[idx, 'Times'])
+                    if is_correct:
+                        new_times = current_times + 1
+                        next_date = today_obj + timedelta(days=new_times)
+                    else:
+                        new_times = 0
+                        next_date = today_obj # 重練
+                    
+                    st.session_state.df.loc[idx, 'Date'] = today_obj
+                    st.session_state.df.loc[idx, 'Times'] = new_times
+                    st.session_state.df.loc[idx, 'Next'] = next_date
+
+                with st.spinner("☁️ 正在同步至 Google Sheets..."):
+                    save_data(st.session_state.df)
+                
+                st.session_state.current_chunks = []
+                st.session_state.processed = False
+                st.session_state.feedback = None
+                st.rerun()
