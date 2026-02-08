@@ -74,8 +74,9 @@ def save_data(df):
 # --- 3. AI 與 語音邏輯 (Prompt 優化版) ---
 
 def get_cefr_level(times):
-    if times < 3: return "B1"
-    elif times < 6: return "B2"
+    if times < 3: return "A2"
+    if times < 6: return "B1"
+    elif times < 9: return "B2"
     else: return "C1"
 
 def get_groq_client():
@@ -113,7 +114,7 @@ def generate_challenge(phrase, level):
     # 優化：要求產生更自然、針對性更強的情境
     prompt = (
         f"You are an English teacher. Target Phrase: '{phrase}'. Level: {level}. "
-        f"Create a SHORT Chinese scenario (Traditional TW) that forces the student to use this exact phrase to answer. "
+        f"Create a SHORT Chinese sentence (Traditional TW) that forces the student to use this exact phrase to answer. "
         f"Rules: \n"
         f"1. Length: Max 1 sentence (concise).\n"
         f"2. Do NOT mention the English phrase in the output.\n"
@@ -135,6 +136,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     system_instruction = (
         "You are a strict but helpful English pronunciation and grammar coach. "
         "Your task is to evaluate if the user correctly used the Target Phrase in a sentence based on the Context. "
+        "The sentence must be natural and grammatically correct. "
         "You must output valid JSON only."
     )
     
@@ -258,7 +260,7 @@ else:
         if mode == "Single":
             st.caption(f"Level: {st.session_state.current_level}")
             st.markdown(f"""
-            <div style="background-color:#000080; padding:20px; border-radius:10px; margin-bottom:15px;">
+            <div style="background-color:#403F6F; padding:20px; border-radius:10px; margin-bottom:15px;">
                 <div style="font-size:1.5em; font-weight:bold;">{st.session_state.generated_prompt}</div>
                 <div style="color:#2563eb; margin-top:10px;">Target: <b>{st.session_state.current_chunks[0]}</b></div>
             </div>
