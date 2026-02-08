@@ -116,12 +116,12 @@ def generate_challenge(phrase, level):
     # 優化：要求產生更自然、針對性更強的情境
     prompt = (
         f"You are an English teacher. Target Phrase: '{phrase}'. Level: {level}. "
-        f"Create a SHORT Chinese scenario (Traditional TW) that forces the student to use this exact phrase to answer. "
+        f"Create a SHORT English scenario that forces the student to use this exact phrase to answer. "
         f"Rules: \n"
         f"1. Length: Max 1 scenario (concise).\n"
         f"2. Do NOT mention the English phrase in the output.\n"
         f"3. The scenario should im  ply the need for '{phrase}'.\n"
-        f"Output ONLY the Chinese sentence."
+        f"Output ONLY the SHORT English scenario sentence."
     )
     
     completion = client.chat.completions.create(model="openai/gpt-oss-120b", messages=[{"role": "user", "content": prompt}])
