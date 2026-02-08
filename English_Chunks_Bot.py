@@ -10,6 +10,8 @@ import asyncio
 import edge_tts
 import base64
 from streamlit_gsheets import GSheetsConnection
+import time
+import base64
 # --- 1. 初始化與設定 ---
 st.set_page_config(page_title="English Chunk Master (Online)", layout="centered", page_icon="🦁")
 
@@ -106,8 +108,25 @@ async def generate_tts(text):
     return audio_data
 
 def play_audio_bytes(audio_bytes):
-    rnd_key = str(random.randint(0, 10000000))
-    st.audio(audio_bytes, format="audio/mp3", autoplay=True, key=rnd_key)
+    # 轉成 base64 字串
+    b64 = base64.b64encode(audio_bytes).decode()
+    
+    # 使用當前時間戳記做為 ID，確保每次都是全新的播放器
+    # 這樣瀏覽器會被迫重新載入，就不會播到舊的
+    md = f"""
+        <audio controls autoplay key="{time.time()}">
+        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+        </audio>
+    """
+    
+    # 使用 empty() 容器技巧來 "清空" 上一次的音檔
+    # 建立一個佔位符，先清空，再寫入
+    if 'audio_container' not in st.session_state:
+        st.session_state.audio_container = st.empty()
+    
+    st.session_state.audio_container.empty()  # 先清掉舊的
+    time.sleep(0.1) # 給瀏覽器一點時間反應
+    st.session_state.audio_container.markdown(md, unsafe_allow_html=True) # 再寫入新的
 
 # 1. 記得修改函式定義，增加 topic 參數
 def generate_challenge(phrase, level, topic): 
