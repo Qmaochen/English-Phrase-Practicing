@@ -124,7 +124,7 @@ def generate_challenge(phrase, level):
         f"Output ONLY the Chinese sentence."
     )
     
-    completion = client.chat.completions.create(model="groq/compound", messages=[{"role": "user", "content": prompt}])
+    completion = client.chat.completions.create(model="openai/gpt-oss-120b", messages=[{"role": "user", "content": prompt}])
     return completion.choices[0].message.content
 
 def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
@@ -150,6 +150,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     1. **Usage Check (CRITICAL)**: 
        - Did the user use the Target Phrase "{targets_str}"? 
        - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
+       - Morphological changes (e.g., tense, plural) are allowed if the core phrase is recognizable.
        
     2. **Grammar & Flow**:
        - If Target Phrase is present but grammar is bad -> Score 60-75.
@@ -173,7 +174,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
 
     try:
         completion = client.chat.completions.create(
-            model="groq/compound",
+            model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": system_instruction}, 
                 {"role": "user", "content": user_prompt}
