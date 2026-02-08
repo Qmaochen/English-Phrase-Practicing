@@ -108,7 +108,14 @@ async def generate_tts(text):
 
 def play_audio_bytes(audio_bytes):
     b64 = base64.b64encode(audio_bytes).decode()
-    md = f"""<audio controls autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
+    # 產生一個隨機 ID
+    rnd_id = random.randint(0, 1000000)
+    # 把 ID 加進 audio 標籤，瀏覽器就會把它當作全新的元件處理
+    md = f"""
+        <audio id="audio_{rnd_id}" controls autoplay>
+        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+        </audio>
+    """
     st.markdown(md, unsafe_allow_html=True)
 
 # 1. 記得修改函式定義，增加 topic 參數
