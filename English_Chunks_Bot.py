@@ -11,6 +11,7 @@ import edge_tts
 import base64
 from streamlit_gsheets import GSheetsConnection
 import time
+import uuid
 
 # --- 1. 初始化與設定 ---
 st.set_page_config(page_title="English Chunk Master (Online)", layout="centered", page_icon="🦁")
@@ -106,25 +107,13 @@ async def generate_tts(text):
             audio_data += chunk["data"]
     return audio_data
 
-# [修改點] 這裡改寫了播放函式
-# 1. 移除 audio_container，直接用 st.markdown 顯示在當前位置
-# 2. 增加 autoplay 參數，讓我們可以控制何時要自動播，何時不要
-def play_audio_bytes(audio_bytes, key_suffix, autoplay=True):
-    b64 = base64.b64encode(audio_bytes).decode()
-    
-    # 決定 HTML 標籤裡要不要加 autoplay
-    autoplay_attr = "autoplay" if autoplay else ""
-    
-    # 使用 timestamp 確保 ID 唯一，讓瀏覽器以為是新元件而執行自動播放
-    # 加上 key_suffix 區分 "prompt" 和 "feedback" 避免 ID 衝突
-    unique_id = f"{key_suffix}_{time.time()}"
-    
-    md = f"""
-        <audio controls {autoplay_attr} id="{unique_id}">
-        <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
-        </audio>
+def play_audio_bytes(audio_bytes, unique_key, autoplay=True):
     """
-    st.markdown(md, unsafe_allow_html=True)
+    unique_key: 每一題專屬的 ID，題目不換，ID 就不換。
+    """
+    # 使用 Streamlit 原生播放器
+    # 當 unique_key 改變時（換題時），舊的播放器會被強制銷毀，聲音會立刻停止。
+    st.audio(audio_bytes, format="audio/mp3", autoplay=autoplay, key=unique_key)
 
 def generate_challenge(phrase, level, topic): 
     client = get_groq_client()
@@ -166,7 +155,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     
     1. **Usage Check (CRITICAL)**: 
        - Did the user use the Target Phrase "{targets_str}"? 
-       - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
+       - If the target phrase is MISSING -> Score MUST be under 60.
        - Morphological changes (e.g., tense, plural, possessive like my, your, ...) are allowed if the core phrase is recognizable.
        - If the target phrase is present but with little change that still makes it recognizable, it can be considered correct.
        - The order of the target phrase can be flexible. 
@@ -250,6 +239,9 @@ else:
 
         # 1. 抽取題目
         if not st.session_state.processed and not st.session_state.current_chunks:
+
+            st.session_state.audio_key = str(uuid.uuid4())
+
             random_idx = random.choice(due_items.index)
             row = st.session_state.df.loc[random_idx]
             
@@ -295,7 +287,7 @@ else:
                 # 只有在還沒回答(processed=False)時才自動播放
                 # 這樣回答完之後，題目音檔會顯示，但不會跟檢討音檔搶著播
                 should_autoplay = not st.session_state.processed
-                play_audio_bytes(st.session_state.prompt_audio, "prompt_audio", autoplay=should_autoplay)
+                play_audio_bytes(st.session_state.prompt_audio, st.session_state.audio_key, autoplay=should_autoplay)
 
         else:
             st.info("請說一段話，包含以下片語：")
@@ -336,9 +328,8 @@ else:
                 # 這裡會每次 render 都生成新的 TTS，為了效能可以考慮 cache，但暫時無妨
                 audio_bytes = asyncio.run(generate_tts(res['better_sentence']))
                 
-                # [修改點] 檢討音檔總是自動播放
-                # 使用不同的 key_suffix="feedback_audio" 確保它有自己的播放器，不會跟題目的混在一起
-                play_audio_bytes(audio_bytes, "feedback_audio", autoplay=True)
+                feedback_key = f"{st.session_state.audio_key}_feedback"
+                play_audio_bytes(audio_bytes, feedback_key, autoplay=True)
 
             if st.button("➡️ 下一題 (Next)"):
                 is_correct = score >= 80
