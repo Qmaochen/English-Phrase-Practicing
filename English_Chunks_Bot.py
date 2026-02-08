@@ -167,8 +167,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
        - Point out grammar mistakes or unnatural phrasing.
        
     4. **Better Sentence (English)**:
-       - Provide a natural, native-level sentence using the Target Phrase that fits the Context.
-       - The sentence should be consice and directly related to the scenario.
+       - Provide a natural, native-level sentence by modifying the user's sentence to incorporate the Target Phrase correctly.
        - The sentence MUST be semantically correct.
        
     Output Format (JSON):
