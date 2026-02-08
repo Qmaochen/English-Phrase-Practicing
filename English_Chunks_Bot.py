@@ -258,13 +258,13 @@ else:
         if mode == "Single":
             st.caption(f"Level: {st.session_state.current_level}")
             st.markdown(f"""
-            <div style="background-color:#f3f4f6; padding:20px; border-radius:10px; margin-bottom:15px;">
+            <div style="background-color:#000080; padding:20px; border-radius:10px; margin-bottom:15px;">
                 <div style="font-size:1.5em; font-weight:bold;">{st.session_state.generated_prompt}</div>
                 <div style="color:#2563eb; margin-top:10px;">Target: <b>{st.session_state.current_chunks[0]}</b></div>
             </div>
             """, unsafe_allow_html=True)
         else:
-            st.info("請說一個故事，包含以下片語：")
+            st.info("請說一段話，包含以下片語：")
             cols = st.columns(len(st.session_state.current_chunks))
             for i, c in enumerate(st.session_state.current_chunks):
                 cols[i].markdown(f"**{i+1}. {c}**")
