@@ -11,12 +11,11 @@ import edge_tts
 import base64
 from streamlit_gsheets import GSheetsConnection
 import time
-import uuid  # 必要：用來產生唯一 ID
+import uuid
 
 # --- 1. 初始化與設定 ---
 st.set_page_config(page_title="English Chunk Master (Online)", layout="centered", page_icon="🦁")
 
-# 初始化 Session State
 if 'current_mode' not in st.session_state: st.session_state.current_mode = None
 if 'current_chunks' not in st.session_state: st.session_state.current_chunks = []
 if 'current_topic' not in st.session_state: st.session_state.current_topic = ""
@@ -30,7 +29,6 @@ if 'df' not in st.session_state: st.session_state.df = None
 if 'recorder_key' not in st.session_state: st.session_state.recorder_key = str(uuid.uuid4())
 if 'prompt_audio' not in st.session_state: st.session_state.prompt_audio = None
 if 'user_transcript' not in st.session_state: st.session_state.user_transcript = ""
-# [修正] 這裡一定要初始化 audio_key，不然會報錯
 if 'audio_key' not in st.session_state: st.session_state.audio_key = str(uuid.uuid4())
 
 conn = st.connection("gsheets", type=GSheetsConnection)
@@ -103,12 +101,16 @@ def transcribe_audio(audio_bytes):
     except Exception as e: return f"Error: {str(e)}"
 
 async def generate_tts(text):
-    communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="-10%")
-    audio_data = b""
-    async for chunk in communicate.stream():
-        if chunk["type"] == "audio":
-            audio_data += chunk["data"]
-    return audio_data
+    try:
+        communicate = edge_tts.Communicate(text, "en-US-ChristopherNeural", rate="-10%")
+        audio_data = b""
+        async for chunk in communicate.stream():
+            if chunk["type"] == "audio":
+                audio_data += chunk["data"]
+        return audio_data
+    except Exception as e:
+        print(f"TTS Error: {e}")
+        return b""
 
 def generate_challenge(phrase, level, topic): 
     client = get_groq_client()
@@ -151,7 +153,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     1. **Usage Check (CRITICAL)**: 
        - Did the user use the Target Phrase "{targets_str}"? 
        - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
-       - Morphological changes (e.g., tense, possessive, plural) are allowed if the core phrase is recognizable.
+       - Morphological changes (e.g., tense, plural, possessive) are allowed if the core phrase is recognizable.
        - If the target phrase is present but with little change that still makes it recognizable, it can be considered correct.
        - The order of the target phrase can be flexible. 
        
@@ -234,7 +236,7 @@ else:
 
         # 1. 抽取題目
         if not st.session_state.processed and not st.session_state.current_chunks:
-            # 換新題目時，同時換一個新的音檔 Key
+            # 重置 audio_key，確保下一題是全新的播放器
             st.session_state.audio_key = str(uuid.uuid4())
             
             random_idx = random.choice(due_items.index)
@@ -277,10 +279,12 @@ else:
             </div>
             """, unsafe_allow_html=True)
             
-            # [核心修改]：只有在「還沒回答」時，才建立這個音訊播放器
-            # 一旦 processed 變成 True (回答了)，這行程式碼就不執行 -> 播放器消失 -> 聲音停止
-            if st.session_state.prompt_audio and not st.session_state.processed:
-                st.audio(st.session_state.prompt_audio, format="audio/mp3", autoplay=True, key=st.session_state.audio_key)
+            # [修正點]：
+            # 1. 只在未回答 (not processed) 時顯示
+            # 2. 增加 len() 檢查，防止空音檔
+            # 3. 使用 BytesIO() 包裝，解決 TypeError
+            if st.session_state.prompt_audio and len(st.session_state.prompt_audio) > 0 and not st.session_state.processed:
+                st.audio(BytesIO(st.session_state.prompt_audio), format="audio/mp3", autoplay=True, key=st.session_state.audio_key)
 
         else:
             st.info("請說一段話，包含以下片語：")
@@ -320,10 +324,10 @@ else:
             if res.get('better_sentence'):
                 audio_bytes = asyncio.run(generate_tts(res['better_sentence']))
                 
-                # 這裡使用 _feedback 後綴，確保跟題目的 key 不一樣
-                # 雖然上面的題目播放器已經消失了，但給個獨特 ID 還是比較保險
-                feedback_key = f"{st.session_state.audio_key}_feedback"
-                st.audio(audio_bytes, format="audio/mp3", autoplay=True, key=feedback_key)
+                # [修正點]：檢討音檔同樣使用 BytesIO 包裝
+                if audio_bytes and len(audio_bytes) > 0:
+                    feedback_key = f"{st.session_state.audio_key}_feedback"
+                    st.audio(BytesIO(audio_bytes), format="audio/mp3", autoplay=True, key=feedback_key)
 
             if st.button("➡️ 下一題 (Next)"):
                 is_correct = score >= 80
@@ -353,5 +357,4 @@ else:
                 st.session_state.recorder_key = str(uuid.uuid4())
                 st.session_state.prompt_audio = None
                 st.session_state.user_transcript = ""
-                # audio_key 會在下一次抽取題目時自動更新，這裡不用動
                 st.rerun()
