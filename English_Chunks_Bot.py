@@ -134,9 +134,9 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     targets_str = ", ".join(target_phrases) if isinstance(target_phrases, list) else target_phrases
     
     system_instruction = (
-        "You are a strict but helpful English pronunciation and grammar coach. "
-        "Your task is to evaluate if the user correctly used the Target Phrase in a sentence based on the Context. "
-        "The sentence must be natural and grammatically correct. "
+        "You are a strict but helpful English coach."
+        "Your task is to evaluate if the user correctly used the Target Phrase in a sentence based on the Context."
+        "The sentence must be natural."
         "You must output valid JSON only."
     )
     
