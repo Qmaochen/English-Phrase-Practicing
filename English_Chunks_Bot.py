@@ -14,7 +14,6 @@ from streamlit_gsheets import GSheetsConnection
 # --- 1. 初始化與設定 ---
 st.set_page_config(page_title="English Chunk Master (Online)", layout="centered", page_icon="🦁")
 
-# Session State 初始化
 if 'current_mode' not in st.session_state: st.session_state.current_mode = None
 if 'current_chunks' not in st.session_state: st.session_state.current_chunks = []
 if 'current_topic' not in st.session_state: st.session_state.current_topic = ""
@@ -26,43 +25,32 @@ if 'processed' not in st.session_state: st.session_state.processed = False
 if 'api_key_input' not in st.session_state: st.session_state.api_key_input = ""
 if 'df' not in st.session_state: st.session_state.df = None
 
-# 建立 Google Sheets 連線
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 # --- 2. 資料處理 ---
 
 def load_data():
     try:
-        # ttl=0 確保不快取
         df = conn.read(worksheet="Sheet1", ttl=0)
-        
-        # 清理欄位
         df.columns = df.columns.str.strip()
         required = ['Chunks', 'Topic', 'Date', 'Times', 'Next']
-        
-        # 今天的格式字串 (僅用於初始化填補)
         now = datetime.now()
         today_str = f"{now.year}/{now.month}/{now.day}"
         
-        # 補齊欄位
         for col in required:
             if col not in df.columns:
                 if col == 'Times': df[col] = 0
                 elif col in ['Date', 'Next']: df[col] = today_str
                 else: df[col] = ""
 
-        # 轉型 - Times
         df['Times'] = pd.to_numeric(df['Times'], errors='coerce').fillna(0).astype(int)
 
-        # 轉型 - 日期處理
         for col in ['Next', 'Date']:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
                 fill_val = (pd.Timestamp.now() - pd.Timedelta(days=1)) if col == 'Next' else pd.Timestamp.now()
                 df[col] = df[col].fillna(fill_val).dt.normalize()
-        
         return df
-
     except Exception as e:
         st.error(f"讀取 Google Sheet 失敗: {e}")
         return pd.DataFrame(columns=['Chunks', 'Topic', 'Date', 'Times', 'Next'])
@@ -70,28 +58,20 @@ def load_data():
 def save_data(df):
     try:
         save_df = df.copy()
-        
-        # 格式化函數：2026/2/7
         def custom_date_fmt(dt):
             if pd.isnull(dt): return ""
             return f"{dt.year}/{dt.month}/{dt.day}"
 
-        if 'Next' in save_df.columns:
-             save_df['Next'] = save_df['Next'].apply(custom_date_fmt)
+        if 'Next' in save_df.columns: save_df['Next'] = save_df['Next'].apply(custom_date_fmt)
+        if 'Date' in save_df.columns: save_df['Date'] = save_df['Date'].apply(custom_date_fmt)
         
-        # Date 也要格式化，確保寫回去時格式統一，但不會改變它的值
-        if 'Date' in save_df.columns:
-             save_df['Date'] = save_df['Date'].apply(custom_date_fmt)
-        
-        # 寫回 Google Sheet
         conn.update(worksheet="Sheet1", data=save_df)
         st.cache_data.clear()
         st.toast("☁️ 進度已同步", icon="✅")
-        
     except Exception as e:
         st.error(f"寫入 Google Sheet 失敗: {e}")
 
-# --- 3. AI 與 語音邏輯 ---
+# --- 3. AI 與 語音邏輯 (Prompt 優化版) ---
 
 def get_cefr_level(times):
     if times < 3: return "B1"
@@ -130,11 +110,14 @@ def generate_challenge(phrase, level):
     client = get_groq_client()
     if not client: return "No API Key"
     
-    # 簡短題目 Prompt
+    # 優化：要求產生更自然、針對性更強的情境
     prompt = (
-        f"Target Phrase: '{phrase}'. Level: {level}. "
-        f"Create a SHORT Chinese sentence (Traditional TW) context to force user to use this phrase. "
-        f"Constraint: Keep it very concise (1 sentence or 1 sentence with a clause). Max 20 Chinese characters. "
+        f"You are an English teacher. Target Phrase: '{phrase}'. Level: {level}. "
+        f"Create a SHORT Chinese scenario (Traditional TW) that forces the student to use this exact phrase to answer. "
+        f"Rules: \n"
+        f"1. Length: Max 1 sentence (concise).\n"
+        f"2. Do NOT mention the English phrase in the output.\n"
+        f"3. The scenario should imply the need for '{phrase}'.\n"
         f"Output ONLY the Chinese sentence."
     )
     
@@ -144,15 +127,62 @@ def generate_challenge(phrase, level):
 def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     client = get_groq_client()
     if not client: return {}
-    system_prompt = f"Target: {target_phrases}. Mode: {mode}. Context: {context_prompt}. User: {user_text}. Grade (0-100), feedback (Traditional Chinese), better_sentence (English). JSON format."
+    
+    # 轉成字串列表方便處理
+    targets_str = ", ".join(target_phrases) if isinstance(target_phrases, list) else target_phrases
+    
+    # --- 關鍵修改：嚴格的評分 Prompt ---
+    system_instruction = (
+        "You are a strict but helpful English pronunciation and grammar coach. "
+        "Your task is to evaluate if the user correctly used the Target Phrase in a sentence based on the Context. "
+        "You must output valid JSON only."
+    )
+    
+    user_prompt = f"""
+    Context (Chinese): "{context_prompt}"
+    Target Phrase(s): "{targets_str}"
+    User Audio Transcript: "{user_text}"
+    
+    Please evaluate based on these STRICT rules:
+    
+    1. **Usage Check (CRITICAL)**: 
+       - Did the user use the Target Phrase "{targets_str}"? 
+       - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
+       
+    2. **Grammar & Flow**:
+       - If Target Phrase is present but grammar is bad -> Score 60-75.
+       - If Target Phrase is present and grammar is okay -> Score 80-90.
+       - If Perfect -> Score 91-100.
+       
+    3. **Feedback (Traditional Chinese)**:
+       - Briefly explain why they got this score.
+       - Point out grammar mistakes or unnatural phrasing.
+       
+    4. **Better Sentence (English)**:
+       - Provide a natural, native-level sentence using the Target Phrase that fits the Context.
+       
+    Output Format (JSON):
+    {{
+        "score": (int),
+        "feedback": "(string in Traditional Chinese)",
+        "better_sentence": "(string in English)"
+    }}
+    """
+
     try:
         completion = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "system", "content": "JSON generator"}, {"role": "user", "content": system_prompt}],
-            response_format={"type": "json_object"}
+            messages=[
+                {"role": "system", "content": system_instruction}, 
+                {"role": "user", "content": user_prompt}
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.3 # 降低隨機性，讓評分更穩定
         )
         return json.loads(completion.choices[0].message.content)
-    except: return {"score": 0, "feedback": "Error", "better_sentence": ""}
+    except Exception as e:
+        print(f"JSON Error: {e}")
+        return {"score": 0, "feedback": "系統評分錯誤，請重試。", "better_sentence": ""}
 
 # --- 4. 主介面 ---
 
@@ -170,7 +200,6 @@ with st.sidebar:
         st.session_state.current_chunks = []
         st.rerun()
 
-# 首次載入
 if st.session_state.df is None:
     with st.spinner("正在連線至 Google Drive..."):
         st.session_state.df = load_data()
@@ -182,7 +211,6 @@ if not groq_api_key:
 elif st.session_state.df is None or st.session_state.df.empty:
     st.warning("⚠️ 無法讀取資料，請檢查 Google Sheets 連結或權限設定。")
 else:
-    # 取得今日待複習
     today = pd.Timestamp.now().normalize()
     due_items = st.session_state.df[st.session_state.df['Next'] <= today]
 
@@ -204,7 +232,6 @@ else:
             phrase = row['Chunks']
             times = row['Times']
             
-            # 判斷故事模式
             topic_siblings = due_items[due_items['Topic'] == topic]
             
             if len(topic_siblings) >= 2 and random.random() > 0.5:
@@ -281,20 +308,16 @@ else:
                         new_times = 0
                         next_date = today_obj
                     
-                    # 移除更新 Date 的動作，只更新 Times 和 Next
-                    # st.session_state.df.loc[idx, 'Date'] = today_obj  <-- 已移除
                     st.session_state.df.loc[idx, 'Times'] = new_times
                     st.session_state.df.loc[idx, 'Next'] = next_date
 
                 with st.spinner("☁️ 正在同步至 Google Sheets..."):
                     save_data(st.session_state.df)
                 
-                # 清空狀態，強制換題
                 st.session_state.current_chunks = []
                 st.session_state.current_indices = []
                 st.session_state.current_mode = None
                 st.session_state.generated_prompt = "" 
                 st.session_state.processed = False
                 st.session_state.feedback = None
-                
                 st.rerun()
