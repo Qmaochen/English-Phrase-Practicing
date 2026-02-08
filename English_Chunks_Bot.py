@@ -282,7 +282,7 @@ else:
             
             # 只有在「未回答」時才放入音檔，且已移除會報錯的 'key' 參數
             if st.session_state.prompt_audio and len(st.session_state.prompt_audio) > 0 and not st.session_state.processed:
-                audio_placeholder.audio(BytesIO(st.session_state.prompt_audio), format="audio/mp3", autoplay=True)
+                audio_placeholder.audio(BytesIO(st.session_state.prompt_audio), format="audio/mpeg", autoplay=True)
             else:
                 # 若已回答 (processed=True)，強制清空 placeholder，聲音必停
                 audio_placeholder.empty()
@@ -327,7 +327,7 @@ else:
                 
                 if audio_bytes and len(audio_bytes) > 0:
                     # 這裡也移除了 'key'，避免報錯
-                    st.audio(BytesIO(audio_bytes), format="audio/mp3", autoplay=True)
+                    st.audio(BytesIO(audio_bytes), format="audio/mpeg", autoplay=True)
 
             if st.button("➡️ 下一題 (Next)"):
                 is_correct = score >= 80
