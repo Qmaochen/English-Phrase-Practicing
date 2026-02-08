@@ -127,7 +127,7 @@ def generate_challenge(phrase, level, topic):
         f"Output ONLY the SHORT English scenario sentence."
     )
     
-    completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
+    completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}], temperature=1.2)
     return completion.choices[0].message.content
 
 def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
