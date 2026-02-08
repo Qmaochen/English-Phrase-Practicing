@@ -24,6 +24,8 @@ if 'feedback' not in st.session_state: st.session_state.feedback = None
 if 'processed' not in st.session_state: st.session_state.processed = False
 if 'api_key_input' not in st.session_state: st.session_state.api_key_input = ""
 if 'df' not in st.session_state: st.session_state.df = None
+# [修改點 1] 新增 recorder_key 來強制重置錄音元件
+if 'recorder_key' not in st.session_state: st.session_state.recorder_key = str(random.randint(1000, 9999))
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -129,10 +131,8 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     client = get_groq_client()
     if not client: return {}
     
-    # 轉成字串列表方便處理
     targets_str = ", ".join(target_phrases) if isinstance(target_phrases, list) else target_phrases
     
-    # --- 關鍵修改：嚴格的評分 Prompt ---
     system_instruction = (
         "You are a strict but helpful English pronunciation and grammar coach. "
         "Your task is to evaluate if the user correctly used the Target Phrase in a sentence based on the Context. "
@@ -179,7 +179,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
                 {"role": "user", "content": user_prompt}
             ],
             response_format={"type": "json_object"},
-            temperature=0.3 # 降低隨機性，讓評分更穩定
+            temperature=0.3
         )
         return json.loads(completion.choices[0].message.content)
     except Exception as e:
@@ -200,6 +200,7 @@ with st.sidebar:
         st.session_state.feedback = None
         st.session_state.generated_prompt = ""
         st.session_state.current_chunks = []
+        st.session_state.recorder_key = str(random.randint(1000, 9999)) # 重置錄音鍵值
         st.rerun()
 
 if st.session_state.df is None:
@@ -261,8 +262,8 @@ else:
             st.caption(f"Level: {st.session_state.current_level}")
             st.markdown(f"""
             <div style="background-color:#403F6F; padding:20px; border-radius:10px; margin-bottom:15px;">
-                <div style="font-size:1.5em; font-weight:bold;">{st.session_state.generated_prompt}</div>
-                <div style="color:#2563eb; margin-top:10px;">Target: <b>{st.session_state.current_chunks[0]}</b></div>
+                <div style="font-size:1.5em; font-weight:bold; color: white;">{st.session_state.generated_prompt}</div>
+                <div style="color:#A5B4FC; margin-top:10px;">Target: <b>{st.session_state.current_chunks[0]}</b></div>
             </div>
             """, unsafe_allow_html=True)
         else:
@@ -272,7 +273,12 @@ else:
                 cols[i].markdown(f"**{i+1}. {c}**")
 
         # 3. 錄音
-        audio_data = mic_recorder(start_prompt="🎙️ 開始回答", stop_prompt="⏹️ 完成", key="recorder")
+        # [修改點 1] 使用 session_state.recorder_key 作為 key
+        audio_data = mic_recorder(
+            start_prompt="🎙️ 開始回答", 
+            stop_prompt="⏹️ 完成", 
+            key=st.session_state.recorder_key
+        )
 
         if audio_data and not st.session_state.processed:
             user_text = transcribe_audio(audio_data['bytes'])
@@ -297,29 +303,32 @@ else:
                 audio_bytes = asyncio.run(generate_tts(res['better_sentence']))
                 play_audio_bytes(audio_bytes)
 
-            if st.button("➡️ 下一題 (Update & Save)"):
+            if st.button("➡️ 下一題 (Next)"):
                 is_correct = score >= 80
                 today_obj = pd.Timestamp.now().normalize()
                 
-                for idx in st.session_state.current_indices:
-                    current_times = int(st.session_state.df.loc[idx, 'Times'])
-                    if is_correct:
+                # [修改點 2] 只有答對才更新資料
+                if is_correct:
+                    for idx in st.session_state.current_indices:
+                        current_times = int(st.session_state.df.loc[idx, 'Times'])
                         new_times = current_times + 1
                         next_date = today_obj + timedelta(days=new_times)
-                    else:
-                        new_times = 0
-                        next_date = today_obj
-                    
-                    st.session_state.df.loc[idx, 'Times'] = new_times
-                    st.session_state.df.loc[idx, 'Next'] = next_date
+                        
+                        st.session_state.df.loc[idx, 'Times'] = new_times
+                        st.session_state.df.loc[idx, 'Next'] = next_date
 
-                with st.spinner("☁️ 正在同步至 Google Sheets..."):
-                    save_data(st.session_state.df)
+                    with st.spinner("☁️ 正在同步至 Google Sheets..."):
+                        save_data(st.session_state.df)
+                else:
+                    st.toast("💪 加油！下次再挑戰，進度保持不變。", icon="🔁")
                 
+                # [修改點 3] 重置所有狀態，並更新 recorder_key
                 st.session_state.current_chunks = []
                 st.session_state.current_indices = []
                 st.session_state.current_mode = None
                 st.session_state.generated_prompt = "" 
                 st.session_state.processed = False
                 st.session_state.feedback = None
+                st.session_state.recorder_key = str(random.randint(1000, 9999)) # 關鍵：換掉錄音元件的ID
+                
                 st.rerun()
