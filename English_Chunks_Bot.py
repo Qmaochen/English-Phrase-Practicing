@@ -116,11 +116,11 @@ def generate_challenge(phrase, level):
     # 優化：要求產生更自然、針對性更強的情境
     prompt = (
         f"You are an English teacher. Target Phrase: '{phrase}'. Level: {level}. "
-        f"Create a SHORT Chinese sentence (Traditional TW) that forces the student to use this exact phrase to answer. "
+        f"Create a SHORT Chinese scenario (Traditional TW) that forces the student to use this exact phrase to answer. "
         f"Rules: \n"
-        f"1. Length: Max 1 sentence (concise).\n"
+        f"1. Length: Max 1 scenario (concise).\n"
         f"2. Do NOT mention the English phrase in the output.\n"
-        f"3. The scenario should imply the need for '{phrase}'.\n"
+        f"3. The scenario should im  ply the need for '{phrase}'.\n"
         f"Output ONLY the Chinese sentence."
     )
     
@@ -174,7 +174,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
 
     try:
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="groq/compound",
             messages=[
                 {"role": "system", "content": system_instruction}, 
                 {"role": "user", "content": user_prompt}
