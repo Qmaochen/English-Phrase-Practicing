@@ -26,6 +26,7 @@ if 'api_key_input' not in st.session_state: st.session_state.api_key_input = ""
 if 'df' not in st.session_state: st.session_state.df = None
 # [修改點 1] 新增 recorder_key 來強制重置錄音元件
 if 'recorder_key' not in st.session_state: st.session_state.recorder_key = str(random.randint(1000, 9999))
+if 'prompt_audio' not in st.session_state: st.session_state.prompt_audio = None
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -258,6 +259,7 @@ else:
                 st.session_state.current_level = get_cefr_level(times)
                 with st.spinner("AI 出題中..."):
                     st.session_state.generated_prompt = generate_challenge(phrase, st.session_state.current_level, topic)
+                    st.session_state.prompt_audio = asyncio.run(generate_tts(st.session_state.generated_prompt))
 
         # 2. 顯示題目
         mode = st.session_state.current_mode
@@ -273,6 +275,9 @@ else:
                 <div style="color:#A5B4FC; margin-top:10px;">Target: <b>{st.session_state.current_chunks[0]}</b></div>
             </div>
             """, unsafe_allow_html=True)
+            if st.session_state.prompt_audio:
+                play_audio_bytes(st.session_state.prompt_audio)
+
         else:
             st.info("請說一段話，包含以下片語：")
             cols = st.columns(len(st.session_state.current_chunks))
@@ -337,5 +342,5 @@ else:
                 st.session_state.processed = False
                 st.session_state.feedback = None
                 st.session_state.recorder_key = str(random.randint(1000, 9999)) # 關鍵：換掉錄音元件的ID
-                
+                st.session_state.prompt_audio = None
                 st.rerun()
