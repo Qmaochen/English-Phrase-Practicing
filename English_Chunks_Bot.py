@@ -29,7 +29,7 @@ if 'df' not in st.session_state: st.session_state.df = None
 # 建立 Google Sheets 連線
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- 2. 資料處理 (針對 2026/2/7 格式優化) ---
+# --- 2. 資料處理 ---
 
 def load_data():
     try:
@@ -40,7 +40,7 @@ def load_data():
         df.columns = df.columns.str.strip()
         required = ['Chunks', 'Topic', 'Date', 'Times', 'Next']
         
-        # 今天的格式字串 (用於填補空值)
+        # 今天的格式字串 (僅用於初始化填補)
         now = datetime.now()
         today_str = f"{now.year}/{now.month}/{now.day}"
         
@@ -55,12 +55,9 @@ def load_data():
         df['Times'] = pd.to_numeric(df['Times'], errors='coerce').fillna(0).astype(int)
 
         # 轉型 - 日期處理
-        # 這裡我們要能夠讀懂 "2026/2/7" 也讀懂 "2026-02-07" (相容性)
         for col in ['Next', 'Date']:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors='coerce')
-                
-                # 如果有讀不到的日期 (NaT)，填入預設值
                 fill_val = (pd.Timestamp.now() - pd.Timedelta(days=1)) if col == 'Next' else pd.Timestamp.now()
                 df[col] = df[col].fillna(fill_val).dt.normalize()
         
@@ -74,22 +71,22 @@ def save_data(df):
     try:
         save_df = df.copy()
         
-        # 定義格式化函數：變成 2026/2/7 (不補0)
+        # 格式化函數：2026/2/7
         def custom_date_fmt(dt):
             if pd.isnull(dt): return ""
             return f"{dt.year}/{dt.month}/{dt.day}"
 
-        # 轉換日期欄位為指定字串格式
         if 'Next' in save_df.columns:
              save_df['Next'] = save_df['Next'].apply(custom_date_fmt)
         
+        # Date 也要格式化，確保寫回去時格式統一，但不會改變它的值
         if 'Date' in save_df.columns:
              save_df['Date'] = save_df['Date'].apply(custom_date_fmt)
         
         # 寫回 Google Sheet
         conn.update(worksheet="Sheet1", data=save_df)
         st.cache_data.clear()
-        st.toast("☁️ 進度已同步 (格式: YYYY/M/D)", icon="✅")
+        st.toast("☁️ 進度已同步", icon="✅")
         
     except Exception as e:
         st.error(f"寫入 Google Sheet 失敗: {e}")
@@ -132,7 +129,15 @@ def play_audio_bytes(audio_bytes):
 def generate_challenge(phrase, level):
     client = get_groq_client()
     if not client: return "No API Key"
-    prompt = f"Target Phrase: '{phrase}'. Level: {level}. Create a Chinese sentence (Traditional TW) to force user to use this phrase. Output ONLY Chinese."
+    
+    # 簡短題目 Prompt
+    prompt = (
+        f"Target Phrase: '{phrase}'. Level: {level}. "
+        f"Create a SHORT Chinese sentence (Traditional TW) context to force user to use this phrase. "
+        f"Constraint: Keep it very concise (1 sentence or 1 sentence with a clause). Max 20 Chinese characters. "
+        f"Output ONLY the Chinese sentence."
+    )
+    
     completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
     return completion.choices[0].message.content
 
@@ -161,6 +166,8 @@ with st.sidebar:
         st.session_state.df = load_data()
         st.session_state.processed = False
         st.session_state.feedback = None
+        st.session_state.generated_prompt = ""
+        st.session_state.current_chunks = []
         st.rerun()
 
 # 首次載入
@@ -190,7 +197,6 @@ else:
 
         # 1. 抽取題目
         if not st.session_state.processed and not st.session_state.current_chunks:
-            # 隨機選題
             random_idx = random.choice(due_items.index)
             row = st.session_state.df.loc[random_idx]
             
@@ -218,6 +224,8 @@ else:
 
         # 2. 顯示題目
         mode = st.session_state.current_mode
+        if not st.session_state.current_indices: st.rerun()
+
         st.markdown(f"### Topic: {st.session_state.df.loc[st.session_state.current_indices[0], 'Topic']}")
         
         if mode == "Single":
@@ -262,7 +270,6 @@ else:
 
             if st.button("➡️ 下一題 (Update & Save)"):
                 is_correct = score >= 80
-                # 這裡不轉換字串，只改 datetime 物件，等 save_data 時再一次轉
                 today_obj = pd.Timestamp.now().normalize()
                 
                 for idx in st.session_state.current_indices:
@@ -272,16 +279,22 @@ else:
                         next_date = today_obj + timedelta(days=new_times)
                     else:
                         new_times = 0
-                        next_date = today_obj # 重練
+                        next_date = today_obj
                     
-                    st.session_state.df.loc[idx, 'Date'] = today_obj
+                    # 移除更新 Date 的動作，只更新 Times 和 Next
+                    # st.session_state.df.loc[idx, 'Date'] = today_obj  <-- 已移除
                     st.session_state.df.loc[idx, 'Times'] = new_times
                     st.session_state.df.loc[idx, 'Next'] = next_date
 
                 with st.spinner("☁️ 正在同步至 Google Sheets..."):
                     save_data(st.session_state.df)
                 
+                # 清空狀態，強制換題
                 st.session_state.current_chunks = []
+                st.session_state.current_indices = []
+                st.session_state.current_mode = None
+                st.session_state.generated_prompt = "" 
                 st.session_state.processed = False
                 st.session_state.feedback = None
+                
                 st.rerun()
