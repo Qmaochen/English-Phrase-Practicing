@@ -141,7 +141,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     )
     
     user_prompt = f"""
-    Context (Chinese): "{context_prompt}"
+    Context: "{context_prompt}"
     Target Phrase(s): "{targets_str}"
     User Audio Transcript: "{user_text}"
     
@@ -151,7 +151,8 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
        - Did the user use the Target Phrase "{targets_str}"? 
        - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
        - Morphological changes (e.g., tense, plural) are allowed if the core phrase is recognizable.
-       - If the target phrase is present but with litter changes that still make it recognizable, it can be considered correct.
+       - If the target phrase is present but with little change that still makes it recognizable, it can be considered correct.
+       - The order of the target phrase can be flexible. 
        
     2. **Grammar & Flow**:
        - If Target Phrase is present but grammar is bad -> Score 60-75.
