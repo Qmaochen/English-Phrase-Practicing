@@ -11,7 +11,7 @@ import edge_tts
 import base64
 from streamlit_gsheets import GSheetsConnection
 import time
-import base64
+
 # --- 1. 初始化與設定 ---
 st.set_page_config(page_title="English Chunk Master (Online)", layout="centered", page_icon="🦁")
 
@@ -25,7 +25,6 @@ if 'feedback' not in st.session_state: st.session_state.feedback = None
 if 'processed' not in st.session_state: st.session_state.processed = False
 if 'api_key_input' not in st.session_state: st.session_state.api_key_input = ""
 if 'df' not in st.session_state: st.session_state.df = None
-# [修改點 1] 新增 recorder_key 來強制重置錄音元件
 if 'recorder_key' not in st.session_state: st.session_state.recorder_key = str(random.randint(1000, 9999))
 if 'prompt_audio' not in st.session_state: st.session_state.prompt_audio = None
 if 'user_transcript' not in st.session_state: st.session_state.user_transcript = ""
@@ -76,7 +75,7 @@ def save_data(df):
     except Exception as e:
         st.error(f"寫入 Google Sheet 失敗: {e}")
 
-# --- 3. AI 與 語音邏輯 (Prompt 優化版) ---
+# --- 3. AI 與 語音邏輯 ---
 
 def get_cefr_level(times):
     if times < 3: return "A2"
@@ -107,37 +106,34 @@ async def generate_tts(text):
             audio_data += chunk["data"]
     return audio_data
 
-def play_audio_bytes(audio_bytes):
-    # 轉成 base64 字串
+# [修改點] 這裡改寫了播放函式
+# 1. 移除 audio_container，直接用 st.markdown 顯示在當前位置
+# 2. 增加 autoplay 參數，讓我們可以控制何時要自動播，何時不要
+def play_audio_bytes(audio_bytes, key_suffix, autoplay=True):
     b64 = base64.b64encode(audio_bytes).decode()
     
-    # 使用當前時間戳記做為 ID，確保每次都是全新的播放器
-    # 這樣瀏覽器會被迫重新載入，就不會播到舊的
+    # 決定 HTML 標籤裡要不要加 autoplay
+    autoplay_attr = "autoplay" if autoplay else ""
+    
+    # 使用 timestamp 確保 ID 唯一，讓瀏覽器以為是新元件而執行自動播放
+    # 加上 key_suffix 區分 "prompt" 和 "feedback" 避免 ID 衝突
+    unique_id = f"{key_suffix}_{time.time()}"
+    
     md = f"""
-        <audio controls autoplay key="{time.time()}">
+        <audio controls {autoplay_attr} id="{unique_id}">
         <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
         </audio>
     """
-    
-    # 使用 empty() 容器技巧來 "清空" 上一次的音檔
-    # 建立一個佔位符，先清空，再寫入
-    if 'audio_container' not in st.session_state:
-        st.session_state.audio_container = st.empty()
-    
-    st.session_state.audio_container.empty()  # 先清掉舊的
-    time.sleep(0.1) # 給瀏覽器一點時間反應
-    st.session_state.audio_container.markdown(md, unsafe_allow_html=True) # 再寫入新的
+    st.markdown(md, unsafe_allow_html=True)
 
-# 1. 記得修改函式定義，增加 topic 參數
 def generate_challenge(phrase, level, topic): 
     client = get_groq_client()
     if not client: return "No API Key"
     
-    # 2. 修改 Prompt
     prompt = (
         f"You are an English teacher. Target Phrase: '{phrase}'. "
-        f"Topic: '{topic}'. Level: {level}. "  # <--- 新增這裡
-        f"Create a SHORT English scenario related to the topic '{topic}' that forces the student to use this exact phrase to answer. " # <--- 這裡也加強關聯
+        f"Topic: '{topic}'. Level: {level}. "
+        f"Create a SHORT English scenario related to the topic '{topic}' that forces the student to use this exact phrase to answer. "
         f"Rules: \n"
         f"1. Length: Max 1 scenario (concise).\n"
         f"2. Do NOT mention the English phrase in the output.\n"
@@ -226,7 +222,7 @@ with st.sidebar:
         st.session_state.feedback = None
         st.session_state.generated_prompt = ""
         st.session_state.current_chunks = []
-        st.session_state.recorder_key = str(random.randint(1000, 9999)) # 重置錄音鍵值
+        st.session_state.recorder_key = str(random.randint(1000, 9999))
         st.rerun()
 
 if st.session_state.df is None:
@@ -293,8 +289,13 @@ else:
                 <div style="color:#A5B4FC; margin-top:10px;">Target: <b>{st.session_state.current_chunks[0]}</b></div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # [修改點] 這裡增加邏輯判斷
             if st.session_state.prompt_audio:
-                play_audio_bytes(st.session_state.prompt_audio)
+                # 只有在還沒回答(processed=False)時才自動播放
+                # 這樣回答完之後，題目音檔會顯示，但不會跟檢討音檔搶著播
+                should_autoplay = not st.session_state.processed
+                play_audio_bytes(st.session_state.prompt_audio, "prompt_audio", autoplay=should_autoplay)
 
         else:
             st.info("請說一段話，包含以下片語：")
@@ -303,7 +304,6 @@ else:
                 cols[i].markdown(f"**{i+1}. {c}**")
 
         # 3. 錄音
-        # [修改點 1] 使用 session_state.recorder_key 作為 key
         audio_data = mic_recorder(
             start_prompt="🎙️ 開始回答", 
             stop_prompt="⏹️ 完成", 
@@ -333,14 +333,17 @@ else:
             st.markdown(f"**🌟 最佳範例:** {res.get('better_sentence')}")
             
             if res.get('better_sentence'):
+                # 這裡會每次 render 都生成新的 TTS，為了效能可以考慮 cache，但暫時無妨
                 audio_bytes = asyncio.run(generate_tts(res['better_sentence']))
-                play_audio_bytes(audio_bytes)
+                
+                # [修改點] 檢討音檔總是自動播放
+                # 使用不同的 key_suffix="feedback_audio" 確保它有自己的播放器，不會跟題目的混在一起
+                play_audio_bytes(audio_bytes, "feedback_audio", autoplay=True)
 
             if st.button("➡️ 下一題 (Next)"):
                 is_correct = score >= 80
                 today_obj = pd.Timestamp.now().normalize()
                 
-                # [修改點 2] 只有答對才更新資料
                 if is_correct:
                     for idx in st.session_state.current_indices:
                         current_times = int(st.session_state.df.loc[idx, 'Times'])
@@ -355,14 +358,13 @@ else:
                 else:
                     st.toast("💪 加油！下次再挑戰，進度保持不變。", icon="🔁")
                 
-                # [修改點 3] 重置所有狀態，並更新 recorder_key
                 st.session_state.current_chunks = []
                 st.session_state.current_indices = []
                 st.session_state.current_mode = None
                 st.session_state.generated_prompt = "" 
                 st.session_state.processed = False
                 st.session_state.feedback = None
-                st.session_state.recorder_key = str(random.randint(1000, 9999)) # 關鍵：換掉錄音元件的ID
+                st.session_state.recorder_key = str(random.randint(1000, 9999))
                 st.session_state.prompt_audio = None
                 st.session_state.user_transcript = ""
                 st.rerun()
