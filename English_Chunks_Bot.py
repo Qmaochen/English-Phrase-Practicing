@@ -124,7 +124,7 @@ def generate_challenge(phrase, level):
         f"Output ONLY the Chinese sentence."
     )
     
-    completion = client.chat.completions.create(model="llama-3.3-70b-versatile", messages=[{"role": "user", "content": prompt}])
+    completion = client.chat.completions.create(model="groq/compound", messages=[{"role": "user", "content": prompt}])
     return completion.choices[0].message.content
 
 def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
@@ -173,7 +173,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
 
     try:
         completion = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="groq/compound",
             messages=[
                 {"role": "system", "content": system_instruction}, 
                 {"role": "user", "content": user_prompt}
