@@ -109,18 +109,20 @@ def play_audio_bytes(audio_bytes):
     md = f"""<audio controls autoplay><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>"""
     st.markdown(md, unsafe_allow_html=True)
 
-def generate_challenge(phrase, level):
+# 1. 記得修改函式定義，增加 topic 參數
+def generate_challenge(phrase, level, topic): 
     client = get_groq_client()
     if not client: return "No API Key"
     
-    # 優化：要求產生更自然、針對性更強的情境
+    # 2. 修改 Prompt
     prompt = (
-        f"You are an English teacher. Target Phrase: '{phrase}'. Level: {level}. "
-        f"Create a SHORT English scenario that forces the student to use this exact phrase to answer. "
+        f"You are an English teacher. Target Phrase: '{phrase}'. "
+        f"Topic: '{topic}'. Level: {level}. "  # <--- 新增這裡
+        f"Create a SHORT English scenario related to the topic '{topic}' that forces the student to use this exact phrase to answer. " # <--- 這裡也加強關聯
         f"Rules: \n"
         f"1. Length: Max 1 scenario (concise).\n"
         f"2. Do NOT mention the English phrase in the output.\n"
-        f"3. The scenario should im  ply the need for '{phrase}'.\n"
+        f"3. The scenario should imply the need for '{phrase}'.\n"
         f"Output ONLY the SHORT English scenario sentence."
     )
     
@@ -248,14 +250,14 @@ else:
                 selected = topic_siblings.sample(sample_n)
                 st.session_state.current_chunks = selected['Chunks'].tolist()
                 st.session_state.current_indices = selected.index.tolist()
-                st.session_state.generated_prompt = "Story Mode"
+                st.session_state.generated_prompt = f"Topic: {topic}. Story Mode."
             else:
                 st.session_state.current_mode = "Single"
                 st.session_state.current_chunks = [phrase]
                 st.session_state.current_indices = [random_idx]
                 st.session_state.current_level = get_cefr_level(times)
                 with st.spinner("AI 出題中..."):
-                    st.session_state.generated_prompt = generate_challenge(phrase, st.session_state.current_level)
+                    st.session_state.generated_prompt = generate_challenge(phrase, st.session_state.current_level, topic)
 
         # 2. 顯示題目
         mode = st.session_state.current_mode
