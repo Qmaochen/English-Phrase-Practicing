@@ -244,7 +244,7 @@ else:
             
             if len(topic_siblings) >= 2 and random.random() > 0.5:
                 st.session_state.current_mode = "Story"
-                sample_n = min(3, len(topic_siblings))
+                sample_n = min(2, len(topic_siblings))
                 selected = topic_siblings.sample(sample_n)
                 st.session_state.current_chunks = selected['Chunks'].tolist()
                 st.session_state.current_indices = selected.index.tolist()
