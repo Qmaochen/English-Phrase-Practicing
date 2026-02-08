@@ -253,7 +253,7 @@ else:
             
             topic_siblings = due_items[due_items['Topic'] == topic]
             
-            if len(topic_siblings) >= 2 and random.random() > 0.5:
+            if len(topic_siblings) >= 2 and random.random() > 0.75:
                 st.session_state.current_mode = "Story"
                 sample_n = min(2, len(topic_siblings))
                 selected = topic_siblings.sample(sample_n)
