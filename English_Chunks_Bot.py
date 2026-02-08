@@ -26,10 +26,10 @@ if 'feedback' not in st.session_state: st.session_state.feedback = None
 if 'processed' not in st.session_state: st.session_state.processed = False
 if 'api_key_input' not in st.session_state: st.session_state.api_key_input = ""
 if 'df' not in st.session_state: st.session_state.df = None
+# recorder_key 仍保留，因為這是 mic_recorder 的參數，通常支援度較好
 if 'recorder_key' not in st.session_state: st.session_state.recorder_key = str(uuid.uuid4())
 if 'prompt_audio' not in st.session_state: st.session_state.prompt_audio = None
 if 'user_transcript' not in st.session_state: st.session_state.user_transcript = ""
-if 'audio_key' not in st.session_state: st.session_state.audio_key = str(uuid.uuid4())
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -236,8 +236,6 @@ else:
 
         # 1. 抽取題目
         if not st.session_state.processed and not st.session_state.current_chunks:
-            # 重置 audio_key，確保下一題是全新的播放器
-            st.session_state.audio_key = str(uuid.uuid4())
             
             random_idx = random.choice(due_items.index)
             row = st.session_state.df.loc[random_idx]
@@ -279,12 +277,15 @@ else:
             </div>
             """, unsafe_allow_html=True)
             
-            # [修正點]：
-            # 1. 只在未回答 (not processed) 時顯示
-            # 2. 增加 len() 檢查，防止空音檔
-            # 3. 使用 BytesIO() 包裝，解決 TypeError
+            # [最終修正]：建立一個 placeholder 來放置音檔
+            audio_placeholder = st.empty()
+            
+            # 只有在「未回答」時才放入音檔，且已移除會報錯的 'key' 參數
             if st.session_state.prompt_audio and len(st.session_state.prompt_audio) > 0 and not st.session_state.processed:
-                st.audio(BytesIO(st.session_state.prompt_audio), format="audio/mp3", autoplay=True, key=st.session_state.audio_key)
+                audio_placeholder.audio(BytesIO(st.session_state.prompt_audio), format="audio/mp3", autoplay=True)
+            else:
+                # 若已回答 (processed=True)，強制清空 placeholder，聲音必停
+                audio_placeholder.empty()
 
         else:
             st.info("請說一段話，包含以下片語：")
@@ -324,10 +325,9 @@ else:
             if res.get('better_sentence'):
                 audio_bytes = asyncio.run(generate_tts(res['better_sentence']))
                 
-                # [修正點]：檢討音檔同樣使用 BytesIO 包裝
                 if audio_bytes and len(audio_bytes) > 0:
-                    feedback_key = f"{st.session_state.audio_key}_feedback"
-                    st.audio(BytesIO(audio_bytes), format="audio/mp3", autoplay=True, key=feedback_key)
+                    # 這裡也移除了 'key'，避免報錯
+                    st.audio(BytesIO(audio_bytes), format="audio/mp3", autoplay=True)
 
             if st.button("➡️ 下一題 (Next)"):
                 is_correct = score >= 80
