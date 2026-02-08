@@ -4,3 +4,4 @@ groq
 streamlit-mic-recorder
 edge-tts
 st-gsheets-connection
+hashlib
