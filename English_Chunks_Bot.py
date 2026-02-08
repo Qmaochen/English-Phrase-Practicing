@@ -10,8 +10,6 @@ import asyncio
 import edge_tts
 import base64
 from streamlit_gsheets import GSheetsConnection
-import hashlib
-
 # --- 1. 初始化與設定 ---
 st.set_page_config(page_title="English Chunk Master (Online)", layout="centered", page_icon="🦁")
 
@@ -108,9 +106,8 @@ async def generate_tts(text):
     return audio_data
 
 def play_audio_bytes(audio_bytes):
-    md5_hash = hashlib.md5(audio_bytes).hexdigest()
-    
-    st.audio(audio_bytes, format="audio/mp3", autoplay=True, key=md5_hash)
+    rnd_key = str(random.randint(0, 10000000))
+    st.audio(audio_bytes, format="audio/mp3", autoplay=True, key=rnd_key)
 
 # 1. 記得修改函式定義，增加 topic 參數
 def generate_challenge(phrase, level, topic): 
