@@ -27,6 +27,7 @@ if 'df' not in st.session_state: st.session_state.df = None
 # [修改點 1] 新增 recorder_key 來強制重置錄音元件
 if 'recorder_key' not in st.session_state: st.session_state.recorder_key = str(random.randint(1000, 9999))
 if 'prompt_audio' not in st.session_state: st.session_state.prompt_audio = None
+if 'user_transcript' not in st.session_state: st.session_state.user_transcript = ""
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -153,7 +154,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     1. **Usage Check (CRITICAL)**: 
        - Did the user use the Target Phrase "{targets_str}"? 
        - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
-       - Morphological changes (e.g., tense, plural) are allowed if the core phrase is recognizable.
+       - Morphological changes (e.g., tense, plural, possessive) are allowed if the core phrase is recognizable.
        - If the target phrase is present but with little change that still makes it recognizable, it can be considered correct.
        - The order of the target phrase can be flexible. 
        
@@ -295,6 +296,8 @@ else:
         if audio_data and not st.session_state.processed:
             user_text = transcribe_audio(audio_data['bytes'])
             st.write(f"👂 You said: {user_text}")
+
+            st.session_state.user_transcript = user_text
             
             with st.spinner("AI 評分中..."):
                 feedback = evaluate_submission(user_text, st.session_state.current_chunks, mode, st.session_state.generated_prompt)
@@ -308,6 +311,7 @@ else:
             score = res.get('score', 0)
             color = "green" if score >= 80 else "red"
             st.markdown(f"## Score: :{color}[{score}]")
+            st.info(f"🗣️ **你的回答:** {st.session_state.user_transcript}")
             st.markdown(f"**💡 AI 建議:** {res.get('feedback')}")
             st.markdown(f"**🌟 最佳範例:** {res.get('better_sentence')}")
             
@@ -343,4 +347,5 @@ else:
                 st.session_state.feedback = None
                 st.session_state.recorder_key = str(random.randint(1000, 9999)) # 關鍵：換掉錄音元件的ID
                 st.session_state.prompt_audio = None
+                st.session_state.user_transcript = ""
                 st.rerun()
