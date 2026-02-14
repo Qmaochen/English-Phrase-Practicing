@@ -179,7 +179,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
 
     try:
         completion = client.chat.completions.create(
-            model="groq/compound",
+            model=random.choice(["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "groq/compound"]),
             messages=[
                 {"role": "system", "content": system_instruction}, 
                 {"role": "user", "content": user_prompt}
