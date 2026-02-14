@@ -137,7 +137,7 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     targets_str = ", ".join(target_phrases) if isinstance(target_phrases, list) else target_phrases
     
     system_instruction = (
-        "You are a strict but helpful English coach."
+        "You are a helpful English coach."
         "Your task is to evaluate if the user correctly used the Target Phrase in a sentence based on the Context."
         "The sentence must be natural."
         "You must output valid JSON only."
@@ -148,18 +148,17 @@ def evaluate_submission(user_text, target_phrases, mode, context_prompt=""):
     Target Phrase(s): "{targets_str}"
     User Audio Transcript: "{user_text}"
     
-    Please evaluate based on these STRICT rules:
+    Please evaluate based on these rules:
     
     1. **Usage Check (CRITICAL)**: 
        - Did the user use the Target Phrase "{targets_str}"? 
        - If the target phrase is MISSING or significantly CHANGED -> Score MUST be under 60.
        - Morphological changes (e.g., tense, plural, possessive) are allowed if the core phrase is recognizable.
        - If the target phrase is present but with little change that still makes it recognizable, it can be considered correct.
-       - The order of the target phrase can be flexible. 
        
     2. **Grammar & Flow**:
        - If Target Phrase is present but grammar is bad -> Score 60-75.
-       - If Target Phrase is present and grammar is okay -> Score 80-90.
+       - If Target Phrase is present and grammar is okay -> Score 75-90.
        - If Perfect -> Score 91-100.
        
     3. **Feedback (Traditional Chinese)**:
@@ -247,7 +246,7 @@ else:
             
             if len(topic_siblings) >= 2 and random.random() > 0.75:
                 st.session_state.current_mode = "Story"
-                sample_n = min(2, len(topic_siblings))
+                sample_n = min(1, len(topic_siblings))
                 selected = topic_siblings.sample(sample_n)
                 st.session_state.current_chunks = selected['Chunks'].tolist()
                 st.session_state.current_indices = selected.index.tolist()
@@ -329,7 +328,7 @@ else:
                     st.audio(BytesIO(audio_bytes), format="audio/mpeg", autoplay=True)
 
             if st.button("➡️ 下一題 (Next)"):
-                is_correct = score >= 80
+                is_correct = score >= 75
                 today_obj = pd.Timestamp.now().normalize()
                 
                 if is_correct:
