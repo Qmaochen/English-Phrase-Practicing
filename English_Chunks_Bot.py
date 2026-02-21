@@ -336,7 +336,7 @@ else:
                         current_times = int(st.session_state.df.loc[idx, 'Times'])
                         new_times = current_times + 1
                         add_date = 2 ** (new_times - 1)
-                        if add_date > 5:
+                        if add_date > 8:
                             add_date += random.choice([-2, -1, 0, 1, 2])  # 小機率增加1天，增加不確定性
                         next_date = today_obj + timedelta(days=add_date)
                         
