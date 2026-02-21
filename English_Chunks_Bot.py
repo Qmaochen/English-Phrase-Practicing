@@ -244,7 +244,7 @@ else:
             
             topic_siblings = due_items[due_items['Topic'] == topic]
             
-            if len(topic_siblings) >= 2 and random.random() > 0.75:
+            if len(topic_siblings) >= 2 and random.random() > 0.5:
                 st.session_state.current_mode = "Story"
                 sample_n = min(1, len(topic_siblings))
                 selected = topic_siblings.sample(sample_n)
@@ -328,14 +328,17 @@ else:
                     st.audio(BytesIO(audio_bytes), format="audio/mpeg", autoplay=True)
 
             if st.button("➡️ 下一題 (Next)"):
-                is_correct = score >= 75
+                is_correct = score >= 80
                 today_obj = pd.Timestamp.now().normalize()
                 
                 if is_correct:
                     for idx in st.session_state.current_indices:
                         current_times = int(st.session_state.df.loc[idx, 'Times'])
                         new_times = current_times + 1
-                        next_date = today_obj + timedelta(days=new_times)
+                        add_date = 2 ** (new_times - 1)
+                        if add_date > 5:
+                            add_date += random.choice([-2, -1, 0, 1, 2])  # 小機率增加1天，增加不確定性
+                        next_date = today_obj + timedelta(days=add_date)
                         
                         st.session_state.df.loc[idx, 'Times'] = new_times
                         st.session_state.df.loc[idx, 'Next'] = next_date
