@@ -49,6 +49,9 @@ def load_data():
                 elif col in ['Date', 'Next']: df[col] = today_str
                 else: df[col] = ""
 
+        # 清除可能來自 Google Sheets 的隱形單引號或空白
+        df['Times'] = df['Times'].astype(str).str.replace("'", "").str.strip()
+        # 再轉換成數字，就不會誤判成 0 了
         df['Times'] = pd.to_numeric(df['Times'], errors='coerce').fillna(0).astype(int)
 
         for col in ['Next', 'Date']:
@@ -335,7 +338,7 @@ else:
                     for idx in st.session_state.current_indices:
                         current_times = int(st.session_state.df.loc[idx, 'Times'])
                         new_times = current_times + 1
-                        add_date = 2 ** (new_times - 1)
+                        add_date = 2 ** current_times
                         if add_date > 8:
                             add_date += random.choice([-2, -1, 0, 1, 2])  # 小機率增加1天，增加不確定性
                         next_date = today_obj + timedelta(days=add_date)
